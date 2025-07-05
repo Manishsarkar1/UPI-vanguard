@@ -1,0 +1,5 @@
+after making the file Generate_data.py
+we can use to create data so we can create fake UPI-transactions
+
+Now for preprocessing the data for ML,
+we create another file name preprocess.py to preprocess the data for ML model
