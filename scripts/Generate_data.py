@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import os
 
 #for generating fake UPI transactions
-def generate_fake_UPI_transactions(n = 1000, save_directory = "../data/upi_transactions.csv"):
+def generate_fake_UPI_transactions(n = 1000, save_directory = "../UPI-vanguard/data/upi_transactions.csv"):
     devices = ["Android", "IOS", "Windows", "MacOS"]
     cities = ["Mumbai", "Delhi", "Bangalore", "Chennai", "Kolkata"]
     transactions_types = ["Send", "Receive", "Request"]
