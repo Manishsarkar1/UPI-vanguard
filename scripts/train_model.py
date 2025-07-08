@@ -16,4 +16,4 @@ model.fit(X)
 
 #step3:save the mdoel
 joblib.dump(model, "../UPI-vanguard/models/Fraud_model.pkl")
-click.secho(f"[👌] Model trained and saved as 'Fraud_model.pkl'", fg = 'blue')
+click.secho(f"[👌] Model trained and saved as 'Fraud_model.pkl'", fg = 'green')
