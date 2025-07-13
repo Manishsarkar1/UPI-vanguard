@@ -1,6 +1,6 @@
 # UPI-vanguard
 
-basic structure
+Basic Structure
 
 UPI-Vanguard
 
