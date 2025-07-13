@@ -1,78 +1,90 @@
+# main.py
 import streamlit as st
 import pandas as pd
 import joblib
+import time
 from scripts.preprocess import preprocess
 
-# Load model and data
+st.set_page_config(page_title="UPI Guardian", layout="wide")
+
+st.title("🛡️ UPI Guardian – Live Fraud Detection Dashboard")
+st.markdown("This assistant monitors live UPI transactions and flags suspicious activity in real-time.")
+
+# Load model
 model = joblib.load("models/Fraud_model.pkl")
-df, _ = preprocess("data/upi_transactions.csv")
 
-# Track index in session state
-if "index" not in st.session_state:
-    st.session_state.index = 0
+# Read CSV (raw feed)
+df_raw = pd.read_csv("data/upi_transactions.csv")
 
-if "go_next" not in st.session_state:
-    st.session_state.go_next = False
-if "go_prev" not in st.session_state:
-    st.session_state.go_prev = False
+# Show last 5 transactions
+st.subheader("🧾 Recent Transactions")
+st.dataframe(df_raw.tail(5), use_container_width=True)
 
-# Process button actions first
-col1, col2, col3, col4 = st.columns(4)
+# Get latest transaction
+latest_txn_raw = df_raw.tail(1)
 
-with col1:
-    if st.button("⬅️ Previous"):
-        st.session_state.go_prev = True
+# Preprocess for ML
+df_encoded, _ = preprocess("data/upi_transactions.csv")
+txn = df_encoded.tail(1)
 
-with col2:
-    if st.button("✅ Confirm as Legit"):
-        st.success("Thanks! This will help us learn in future.")
-
-with col3:
-    if st.button("🚫 Report Fraud"):
-        st.warning("Fraud reported. We'll take further action.")
-
-with col4:
-    if st.button("➡️ Next"):
-        st.session_state.go_next = True
-
-# Apply navigation actions after buttons are clicked
-if st.session_state.go_next:
-    if st.session_state.index + 1 < len(df):
-        st.session_state.index += 1
-    st.session_state.go_next = False
-
-if st.session_state.go_prev:
-    if st.session_state.index > 0:
-        st.session_state.index -= 1
-    st.session_state.go_prev = False
-
-# Load current transaction AFTER button actions
-txn = df.iloc[st.session_state.index:st.session_state.index + 1]
-columns_to_use = [col for col in txn.columns if col != "is_fraud"]
-prediction = model.predict(txn[columns_to_use])
+# Drop unused columns for prediction
+cols_to_use = [col for col in txn.columns if col not in ["transaction_id", "timestamp", "is_fraud"]]
+prediction = model.predict(txn[cols_to_use])
 is_fraud = prediction[0] == -1
 
-st.title("🛡️ UPI Guardian – Smart Transaction Assistant")
-st.markdown("Simulating real UPI transaction experience for Walmart consumers.")
+# Show transaction
+st.subheader("🔍 Live Transaction Under Review")
+st.table(latest_txn_raw)
 
-# Display transaction info
-st.subheader("🧾 Transaction Details")
-st.table(txn)
-
-# Display result
+# Show prediction
 if is_fraud:
-    st.markdown("🚨 **Flagged as Suspicious**")
+    st.error("🚨 Suspicious Activity Detected!")
 else:
-    st.markdown("✅ **Marked as Safe**")
+    st.success("✅ Transaction looks safe.")
 
-# Explain reasoning (simulated logic)
+# Explain reason (manual logic)
 reasons = []
-if "amount" in txn.columns and txn["amount"].values[0] > 9000:
+amount = latest_txn_raw["amount"].values[0]
+device = latest_txn_raw["device"].values[0]
+city = latest_txn_raw["city"].values[0]
+status = latest_txn_raw["status"].values[0]
+
+if amount > 9000:
     reasons.append("High amount")
-if "device" in txn.columns and txn["device"].values[0] == 2:
+if device == "MacOS":
     reasons.append("Unusual device")
-if "location" in txn.columns and txn["location"].values[0] > 3:
+if city in ["Kolkata", "Chennai"]:
     reasons.append("Less common location")
+if status in ["Failed", "Pending"]:
+    reasons.append("Transaction not confirmed")
 
 if reasons:
-    st.info(f"🧠 Assistant Insight: This transaction was flagged due to: {', '.join(reasons)}")
+    st.info(f"🧠 Assistant Insight: Flagged due to: {', '.join(reasons)}")
+
+# Track last logged txn to avoid duplicate writes
+if "last_logged_id" not in st.session_state:
+    st.session_state.last_logged_id = None
+
+current_txn_id = latest_txn_raw["transaction_id"].values[0]
+
+if current_txn_id != st.session_state.last_logged_id:
+    st.session_state.last_logged_id = current_txn_id
+
+    # Add fraud flag to the logged row
+    row_to_log = latest_txn_raw.copy()
+    row_to_log["is_fraud"] = is_fraud
+
+    # Decide where to save
+    target_file = "data/fraud_transactions.csv" if is_fraud else "data/clean_transactions.csv"
+
+    try:
+        with open(target_file, "a") as f:
+            row_to_log.to_csv(f, header=f.tell() == 0, index=False)
+    except FileNotFoundError:
+        row_to_log.to_csv(target_file, mode="w", index=False)
+
+# Auto-refresh checkbox
+refresh = st.checkbox("🔄 Auto-refresh every 3 sec", value=True)
+if refresh:
+    time.sleep(3)
+    st.rerun()
