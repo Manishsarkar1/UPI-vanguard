@@ -1,4 +1,3 @@
-# scripts/live_generator.py
 import csv, random, time
 from datetime import datetime
 
