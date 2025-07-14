@@ -1,7 +1,3 @@
-# GUI/Native_application.py
-# -------------------------------------------------------------
-# Live desktop dashboard built with customtkinter
-# -------------------------------------------------------------
 import sys, os, subprocess, pandas as pd, joblib
 import customtkinter as ctk
 from pathlib import Path
@@ -14,8 +10,8 @@ if str(ROOT_DIR) not in sys.path:
 from scripts.preprocess import preprocess            # now import works
 
 # ── Appearance / theme ───────────────────────────────────────
-ctk.set_appearance_mode("dark")          # "light", "dark", or "system"
-ctk.set_default_color_theme("blue")      # blue / green / dark‑blue …
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
 # ── Paths ─────────────────────────────────────────────────────
 DATA_DIR   = ROOT_DIR / "data"
