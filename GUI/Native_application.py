@@ -1,88 +1,106 @@
+# GUI/Native_application.py
+# -------------------------------------------------------------
+# Live desktop dashboard built with customtkinter
+# -------------------------------------------------------------
+import sys, os, subprocess, pandas as pd, joblib
 import customtkinter as ctk
-import pandas as pd
-import joblib
-import subprocess
-import sys
-import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from pathlib import Path
 
-from scripts.preprocess import preprocess
+# ── Ensure project root is on sys.path ────────────────────────
+ROOT_DIR = Path(__file__).resolve().parent.parent   # …/UPI‑vanguard
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
 
-ctk.set_appearance_mode("dark")
-ctk.set_default_color_theme("blue")
+from scripts.preprocess import preprocess            # now import works
 
+# ── Appearance / theme ───────────────────────────────────────
+ctk.set_appearance_mode("dark")          # "light", "dark", or "system"
+ctk.set_default_color_theme("blue")      # blue / green / dark‑blue …
+
+# ── Paths ─────────────────────────────────────────────────────
+DATA_DIR   = ROOT_DIR / "data"
+MODEL_PATH = ROOT_DIR / "models" / "Fraud_model.pkl"
+RAW_CSV    = DATA_DIR / "upi_transactions.csv"
+FRAUD_CSV  = DATA_DIR / "fraud_transactions.csv"
+CLEAN_CSV  = DATA_DIR / "clean_transactions.csv"
+
+# ── Load ML model once ───────────────────────────────────────
+model = joblib.load(MODEL_PATH)
+
+# ── GUI Window ───────────────────────────────────────────────
 app = ctk.CTk()
-app.geometry("1000x500")
-app.title("🛡️ UPI Guardian – Desktop Live Monitor")
+app.title("🛡️ UPI Guardian – Desktop Live Monitor")
+app.geometry("1000x520")
 
-# Load model
-model = joblib.load("models/Fraud_model.pkl")
+title = ctk.CTkLabel(app, text="🛡️ UPI Guardian – Live Fraud Detection", font=("Helvetica", 20))
+title.pack(pady=10)
 
-# Widgets
-header = ctk.CTkLabel(app, text="🛡️ UPI Guardian – Live Fraud Detection", font=("Helvetica", 20))
-header.pack(pady=10)
+log_box = ctk.CTkTextbox(app, width=960, height=250, font=("Consolas", 11))
+log_box.pack(pady=5)
 
-log_box = ctk.CTkTextbox(app, width=950, height=240, font=("Consolas", 12))
-log_box.pack(pady=10)
+status_lbl  = ctk.CTkLabel(app, text="Status: --",  font=("Helvetica", 16))
+reason_lbl  = ctk.CTkLabel(app, text="Reason: --", font=("Helvetica", 12))
+status_lbl.pack(pady=4)
+reason_lbl.pack(pady=2)
 
-status_label = ctk.CTkLabel(app, text="Status: --", font=("Helvetica", 16))
-status_label.pack(pady=5)
+# Keep track of last‑seen txn to avoid duplicates
+last_logged_id: str | None = None
 
-reason_label = ctk.CTkLabel(app, text="Reason: --", font=("Helvetica", 12))
-reason_label.pack(pady=2)
+# ── Core update routine ──────────────────────────────────────
+def update_dashboard():
+    global last_logged_id
 
-def load_and_predict():
     try:
-        df_raw = pd.read_csv("data/upi_transactions.csv")
-        df_encoded, _ = preprocess("data/upi_transactions.csv")
-
+        # ---------- load newest data ----------
+        df_raw = pd.read_csv(RAW_CSV)
         latest_raw = df_raw.tail(1)
-        latest_encoded = df_encoded.tail(1)
-        cols = [c for c in latest_encoded.columns if c not in ["transaction_id", "timestamp", "is_fraud"]]
+        txn_id = latest_raw["transaction_id"].values[0]
 
-        prediction = model.predict(latest_encoded[cols])
-        is_fraud = prediction[0] == -1
-
-        # Show full logs
+        # ---------- display last 10 rows ----------
         log_box.delete("0.0", ctk.END)
         log_box.insert(ctk.END, df_raw.tail(10).to_string(index=False))
 
-        # Status output
-        if is_fraud:
-            status_label.configure(text="🚨 Fraud Detected", text_color="red")
-        else:
-            status_label.configure(text="✅ Safe Transaction", text_color="green")
+        # ---------- preprocess + predict ----------
+        df_enc, _ = preprocess(str(RAW_CSV))
+        latest_enc = df_enc.tail(1)
+        features = [c for c in latest_enc.columns if c not in ("transaction_id", "timestamp", "is_fraud")]
+        is_fraud = model.predict(latest_enc[features])[0] == -1
 
-        # Reasoning
+        # ---------- UI status ----------
+        if is_fraud:
+            status_lbl.configure(text="🚨 Fraud Detected", text_color="red")
+        else:
+            status_lbl.configure(text="✅ Safe Transaction", text_color="green")
+
+        # ---------- assistant reasoning ----------
         row = latest_raw.iloc[0]
         reasons = []
-        if row["amount"] > 9000:
-            reasons.append("High amount")
-        if row["device"] == "MacOS":
-            reasons.append("Unusual device")
-        if row["city"] in ["Kolkata", "Chennai"]:
-            reasons.append("Less common location")
-        if row["status"] in ["Failed", "Pending"]:
-            reasons.append("Unstable status")
+        if row["amount"] > 9000:                      reasons.append("High amount")
+        if row["device"] == "MacOS":                  reasons.append("Unusual device")
+        if row["city"] in ("Kolkata", "Chennai"):     reasons.append("Less‑common location")
+        if row["status"] in ("Failed", "Pending"):    reasons.append("Unstable status")
+        reason_lbl.configure(text="Reason: " + (", ".join(reasons) if reasons else "Looks normal"))
 
-        reason_label.configure(text=f"Reason: {', '.join(reasons) if reasons else 'Looks normal'}")
+        # ---------- log to fraud/clean CSV once ----------
+        if txn_id != last_logged_id:
+            last_logged_id = txn_id
+            target = FRAUD_CSV if is_fraud else CLEAN_CSV
+            mode   = "a" if target.exists() else "w"
+            latest_raw.assign(is_fraud=is_fraud).to_csv(target, mode=mode, index=False, header=not target.exists())
 
     except Exception as e:
-        status_label.configure(text=f"Error: {e}", text_color="orange")
+        status_lbl.configure(text=f"Error: {e}", text_color="orange")
 
-def auto_refresh():
-    load_and_predict()
-    app.after(2000, auto_refresh)  # Refresh every 2 seconds
+    # schedule next refresh (2000 ms)
+    app.after(1000, update_dashboard)
 
-# Run once + schedule
-load_and_predict()
-auto_refresh()
+# ── Button to open separate log viewer ───────────────────────
+def open_viewer():
+    subprocess.Popen([sys.executable, str(ROOT_DIR / "gui" / "fraud_viewer.py")])
 
-# Button to open external fraud/clean viewer
-def open_fraud_viewer():
-    subprocess.Popen(["python", "GUI/fraud_viewer.py"])
+viewer_btn = ctk.CTkButton(app, text="📂 Show Fraud / Clean Logs", command=open_viewer)
+viewer_btn.pack(pady=12)
 
-open_btn = ctk.CTkButton(app, text="📂 Show Fraud & Clean Logs", command=open_fraud_viewer)
-open_btn.pack(pady=15)
-
+# ── Kick‑off first update and launch app ─────────────────────
+update_dashboard()
 app.mainloop()
